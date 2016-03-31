@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+
+# Combines the phase volumes given to generate teh pahse field maps.
+# The code is translated from AFNIs implementation:
+#
+#   for (i=0; i<nvox;++i) {
+#      dif[i] = (phi1[i]-phi2[i])/2.0;
+#      if (ABS(dif[i]) < 90/n || !rpud->fixsum) { /* should this be 90 / n ? */ 
+#         sum[i] = (phi1[i]+phi2[i])/2.0;
+#      } else { /* Too big a difference in phase, likely 
+#               summing about zero degrees where wrapping from
+#               360 occurs*/
+#         sum[i] = (phi1[i]+phi2[i])/2.0-180.0/n; 
+#         if (sum[i]<0) sum[i] = 360/n + sum[i];
+#      }
+#
+
+def combine_volumes(volume1_path, volume2_path, output_path):
+    import nibabel as nib
+    import numpy as np
+    import os
+    import scipy.stats as ss
+
+    volume1 = nib.load(volume1_path)
+    volume2 = nib.load(volume2_path)
+    real_volume1_data=volume1.get_data()[:,:,:,0]
+    real_volume2_data=volume2.get_data()[:,:,:,0]
+    combined_volume=ss.circmean([real_volume1_data, real_volume2_data],high=360,low=0,axis=0)
+
+#    combined_volume=np.zeros(real_volume1_data.shape)
+
+#    it = np.nditer(real_volume1_data, flags=['multi_index'])
+#    while not it.finished:
+#        diff=0.5*(real_volume1_data[it.multi_index]-real_volume2_data[it.multi_index])
+#        if abs(diff)< 90:
+#            combined_volume[it.multi_index]=0.5*(real_volume1_data[it.multi_index]+real_volume2_data[it.multi_index])
+#        else:
+#            sum_value=0.5*(real_volume1_data[it.multi_index]+real_volume2_data[it.multi_index])-180
+#            if sum_value<0:
+#                sum_value+=360
+#            combined_volume[it.multi_index]=sum_value
+#        it.iternext()
+     
+    volume_returned_data=(volume1.get_data()+volume2.get_data())*0.5
+    volume_returned_data[:,:,:,0]=combined_volume
+    nib.Nifti1Image(volume_returned_data, volume1.get_affine()).to_filename(output_path)
+    return volume_returned_data
+
+    
+
+if __name__ == "__main__":
+    import sys
+    volume1_path = sys.argv[1]
+    volume2_path = sys.argv[2]
+    output_path = sys.argv[3]
+    combined_volume=combine_volumes(volume1_path, volume2_path, output_path)
+    print ">> Combining volumes completed"
+
+
+
+
+
+
+
+
+
+
+
+
+
+

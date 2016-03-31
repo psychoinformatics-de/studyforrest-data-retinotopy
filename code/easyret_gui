@@ -1,0 +1,170 @@
+#!/usr/bin/env python
+
+import os
+import wx
+import wx.lib.filebrowsebutton as libtest
+import wx.lib.agw.floatspin as FS
+from os.path import join as opj
+
+MAIN_WINDOW_DEFAULT_SIZE = (650,700)
+
+class Frame(wx.Frame):
+    
+    def __init__(self, parent, id, title):
+        style=wx.DEFAULT_FRAME_STYLE ^ (wx.RESIZE_BORDER) # XOR to remove the resizeable border        
+        wx.Frame.__init__(self, parent, id, title=title, size=MAIN_WINDOW_DEFAULT_SIZE, style=style)
+        self.Center() # open in the centre of the screen
+        self.panel = wx.Panel(self)
+        self.subject_id_label = wx.StaticText(self.panel, pos=(50, 45), size=(140,-1), label="Enter Subject ID:")
+        self.subject_id = wx.TextCtrl(self.panel, pos=(200, 40), size=(60,-1))
+        self.contract = libtest.FileBrowseButton(self.panel, pos=(50, 80), initialValue='Enter path to Contracting volume', toolTip='Enter/Browse path to Contracting volume', fileMask='*.nii.gz', size=(500,30), labelWidth=100)
+        self.expand = libtest.FileBrowseButton(self.panel, pos=(50, 120), initialValue='Enter path to Expanding volume', toolTip='Enter/Browse path to Expanding volume', fileMask='*.nii.gz', size=(500,30), labelWidth=100)
+        self.clock = libtest.FileBrowseButton(self.panel, pos=(50, 160), initialValue='Enter path to Clockwise volume', toolTip='Enter/Browse path to Clockwise volume', fileMask='*.nii.gz', size=(500,30), labelWidth=100)
+        self.counter = libtest.FileBrowseButton(self.panel, labelWidth=10, pos=(50, 200),  initialValue='Enter path to Counter clockwise volume', toolTip='Enter/Browse path to Counter clockwise volume', fileMask='*.nii.gz', size=(500,30))
+        self.mask = libtest.FileBrowseButton(self.panel, labelWidth=10, pos=(50, 240),  initialValue='Enter path to mask', toolTip='Enter/Browse path to brain mask of the retmapping volumes', fileMask='*.nii.gz', size=(350,30))
+        self.FWHM_label = wx.StaticText(self.panel, pos=(50, 285), size=(250,-1), label="Spatial Smoothing FWHM (mm):")
+        self.FWHM = FS.FloatSpin(self.panel, value='4', pos=(300, 280), size=(45, -1), min_val=0, max_val=10, increment=1)
+        self.FWHM.SetDigits(0) 
+        self.output_folder_label = wx.StaticText(self.panel, pos=(50, 325), size=(250,-1), label="Select output folder:")
+        self.output = wx.DirPickerCtrl(self.panel, pos=(250, 320))
+        self.postprocessingshift = wx.CheckBox(self.panel, -1, 'Post Processing Shift', pos=(50, 385))
+        self.Bind(wx.EVT_CHECKBOX, self.OnPostProcessShift, self.postprocessingshift)
+        self.surfacemaps = wx.CheckBox(self.panel, -1, 'Surface Maps', pos=(50, 415))
+        self.Bind(wx.EVT_CHECKBOX, self.OnSurfaceMaps, self.surfacemaps)
+        self.debugmode = wx.CheckBox(self.panel, -1, 'Debug Mode', pos=(50, 580))      
+        self.process_button = wx.Button(self.panel, pos=(470, 580), size=(80, 25), label="EasyRet")
+        self.Bind(wx.EVT_BUTTON, self.OnProcess, self.process_button)
+        self.CreateMenuBar()
+        self.CreateStatusBar()
+    
+    
+    
+        
+    def CreateMenuBar(self):
+
+        menuBar = wx.MenuBar()
+        # Tell our Frame about this MenuBar
+        self.SetMenuBar(menuBar)
+        menuFile = wx.Menu()
+
+        # NOTE on wx ids - they're used everywhere, we don't care about them
+        # Used to handle events and other things
+        # An id can be -1 or wx.ID_ANY, wx.NewId(), your own id
+        # Get the id using object.GetId()
+        
+        # add a Help menu with an About item
+        menuHelp = wx.Menu()
+        menuBar.Append(menuHelp, '&Help')
+        helpMenuItem = menuHelp.Append(-1, '&About', 'About EasyRet')
+        self.Bind(wx.EVT_MENU, self.OnAbout, helpMenuItem)        
+        
+        # create a menu item for Exit and bind it to the OnExit function       
+        exitMenuItem = menuHelp.Append(-1, '&Exit', 'Exit EasyRet')        
+        self.Bind(wx.EVT_MENU, self.OnExit, exitMenuItem)
+        
+    def OnAbout(self,e):
+        # A message dialog box with an OK button. wx.OK is a standard ID in wxWidgets.
+        
+        help_text='I am working on it\n please bear with me'
+        dlg = wx.MessageDialog( self, help_text, "About EasyRet", wx.OK)
+        dlg.ShowModal() # Show it
+        dlg.Destroy() # finally destroy it when finished.
+        
+    def OnPostProcessShift(self, event):   
+        if self.postprocessingshift.GetValue(): 
+            self.con_shift_text = wx.StaticText(self.panel, pos=(250, 360), size=(200,-1), label="Con")        
+            self.con_shift = FS.FloatSpin(self.panel, value='22.5', pos=(250, 380), size=(70, -1), min_val=-360, max_val=360, increment=0.25)
+            self.con_shift.SetDigits(2)
+            self.exp_shift_text = wx.StaticText(self.panel, pos=(320, 360), size=(200,-1), label="Exp")        
+            self.exp_shift = FS.FloatSpin(self.panel, value='22.5', pos=(320, 380), size=(70, -1), min_val=-360, max_val=360, increment=0.25)
+            self.exp_shift.SetDigits(2)
+            self.clw_shift_text = wx.StaticText(self.panel, pos=(390, 360), size=(200,-1), label="Clw")        
+            self.clw_shift = FS.FloatSpin(self.panel, value='22.5', pos=(390, 380), size=(70, -1), min_val=-360, max_val=360, increment=0.25)
+            self.clw_shift.SetDigits(2)
+            self.ccw_shift_text = wx.StaticText(self.panel, pos=(460, 360), size=(200,-1), label="Ccw")        
+            self.ccw_shift = FS.FloatSpin(self.panel, value='22.5', pos=(460, 380), size=(70, -1), min_val=-360, max_val=360, increment=0.25)
+            self.ccw_shift.SetDigits(2)
+         
+        else:
+            self.con_shift.Destroy()
+            self.con_shift_text.Destroy()
+            self.exp_shift.Destroy()
+            self.exp_shift_text.Destroy()
+            self.clw_shift.Destroy()
+            self.clw_shift_text.Destroy()
+            self.ccw_shift.Destroy()
+            self.ccw_shift_text.Destroy()
+            
+    def OnSurfaceMaps(self, event):   
+        if self.surfacemaps.GetValue(): 
+            self.anatomy = libtest.FileBrowseButton(self.panel, labelWidth=10, pos=(150, 450),  initialValue='Enter path to anatomy', toolTip='Enter/Browse path to the anatomical volume that was used for Freesurfer recon-all analysis', fileMask='*.nii.gz', size=(400,30))
+            self.transformation = libtest.FileBrowseButton(self.panel, labelWidth=10, pos=(150, 490),  initialValue='Enter transformation matrix', toolTip='Enter/Browse path to the fsl type transformation file for co-registering BOLD retmapping volumes to anatomical volumes', fileMask='*.mat', size=(400,30))
+            self.ROI = libtest.FileBrowseButton(self.panel, labelWidth=10, pos=(150, 530),  initialValue='Enter path to ROI mask', fileMask='*.nii.gz',  toolTip='Enter/Browse path to the ROI mask if you want your surface maps to be restricted to Occipital lobe only', size=(400,30))
+
+        else:
+            self.anatomy.Destroy()
+            self.transformation.Destroy()
+            self.ROI.Destroy()
+            
+    def OnProcess(self, event):
+        
+        from subprocess import PIPE, CalledProcessError, check_call, Popen
+        bash_processing_script=opj(os.path.dirname(os.path.realpath(__file__)), 'process_retmap')
+        subject_id = str(self.subject_id.GetValue())
+        contract_volume = str(self.contract.GetValue())
+        expand_volume = str(self.expand.GetValue())
+        clock_volume = str(self.clock.GetValue())
+        counter_volume = str(self.counter.GetValue())
+        mask = str(self.mask.GetValue())
+        FWHM = str(self.FWHM.GetValue())
+        output_folder = str(self.output.GetPath())
+        contract_shift=expand_shift=clock_shift=counter_shift=anatomy_volume=transformation_matrix=ROI=''
+        post_processing_shift=str(self.postprocessingshift.GetValue())
+        if self.postprocessingshift.GetValue():
+            contract_shift=str(self.con_shift.GetValue())
+            expand_shift=str(self.exp_shift.GetValue())
+            clock_shift=str(self.clw_shift.GetValue())
+            counter_shift=str(self.ccw_shift.GetValue())
+        
+        surface_maps=str(self.surfacemaps.GetValue())  
+        if self.surfacemaps.GetValue():
+            anatomy_volume=str(self.anatomy.GetValue())
+            transformation_matrix=str(self.transformation.GetValue())
+            ROI=str(self.ROI.GetValue())
+        debug_mode=str(self.debugmode.GetValue())
+        error_log=opj(output_folder, subject_id+'_error.log')
+        #scripts/pyretmap/code/processing_pipeline/process_retmap sub-16 /home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run001/bold_bold3Tp2_to_subjbold3Tp2.nii.gz /home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run003/bold_bold3Tp2_to_subjbold3Tp2.nii.gz /home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run004/bold_bold3Tp2_to_subjbold3Tp2.nii.gz /home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run002/bold_bold3Tp2_to_subjbold3Tp2.nii.gz /home/data/psyinf/forrest_gump/anondata/sub016/templates/bold3Tp2/brain_mask.nii.gz /home/data/exppsy/spark/Study_Forrest checked -337.5 0.0 101.25 -281.25 checked /home/data/psyinf/forrest_gump/anondata/sub016/templates/t1w/head.nii.gz /home/data/psyinf/forrest_gump/anondata/sub016/templates/bold3Tp2/in_t1w/xfm_6dof.mat ''
+
+        arguments_list=[bash_processing_script, subject_id, contract_volume, expand_volume, clock_volume, counter_volume, mask, FWHM, output_folder, post_processing_shift, contract_shift, expand_shift, clock_shift, counter_shift, surface_maps, anatomy_volume, transformation_matrix, ROI, debug_mode]
+        print '\n\n'
+        print ' '.join(arguments_list)
+        print '\n\n'
+        print 'Processing Retmap'
+
+        with open(error_log, "w") as f:
+            try:
+                check_call(arguments_list, stderr=f)
+            except CalledProcessError as e:
+                print(e)
+                exit(1)
+        print 'Done'
+        
+    def OnExit(self, event):
+        "Close the application by Destroying the object"
+        # TRY add in your own print call here
+        self.Destroy() # SHOW HELP SIDEBAR
+        
+    
+class App(wx.App):
+    
+    def OnInit(self):
+        self.frame = Frame(parent=None, id=-1, title='EasyRet')
+        self.frame.Show()
+        self.SetTopWindow(self.frame)
+        return True
+    
+if __name__ == "__main__":       
+    # make an App object, set stdout to the console so we can see errors
+    app = App(redirect=False)
+        
+    app.MainLoop()

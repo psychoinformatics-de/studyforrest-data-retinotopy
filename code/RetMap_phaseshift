@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+
+# Shift the phase of the input nifti.
+# It is useful to correct for different wedge or ring starting points,
+# ie. if the polar angle wedge doesn't start from the upper vertical
+# meridian and your further processing expects it to start at the upper
+# vertical meridian.
+
+def make_phaseshift(niftipath, shift):
+    import nibabel as nib
+    import numpy as np
+    import os
+
+
+    cond = os.path.basename(niftipath).split("_")[0]
+    print "condition: ", cond
+    
+    ## get condition
+    #dsback2niftisave = os.path.dirname(os.path.dirname(niftipath))+'/post_processing/'+cond+"_phShift.nii.gz"
+    dsback2niftisave = 'post_processing/'+cond+"_phShift.nii.gz"
+
+    ## set shift depending on condition
+    #~ if cond == 'ccw':
+        #~ shift = -281.25
+    #~ elif cond == 'clw':
+        #~ shift = 101.25
+    #~ elif cond == "con":
+        #~ shift = -337.5
+    #~ elif cond == "exp":
+        #~ shift = 0
+    shift=float(shift)
+    print "shifting by degree: ", shift
+    ## get nifti 
+    nifti= nib.load(niftipath)
+
+    data = nifti.get_data()
+
+    # do phase shift depending on condition
+    tmp0 = (data[:,:,:,0] + shift)%360
+    #tmp0[tmp0 >= 360] = tmp0[tmp0 >= 360] - 360
+    #tmp0[tmp0 < 0] = tmp0[tmp0 < 0] + 360
+    
+    #~ if cond == 'ccw' or cond == "con":
+        #~ tmp0 = 360-tmp0           
+    
+    data[:,:,:,0]=tmp0
+
+
+    dsback2nifti = nib.Nifti1Image(data, nifti.get_affine())
+    nib.save(dsback2nifti, dsback2niftisave)
+    
+
+if __name__ == "__main__":
+    import sys
+    niftipath = sys.argv[1]
+    shift = sys.argv[2]
+    print "processing file: \n", niftipath
+    make_phaseshift(niftipath, shift)
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,312 @@
+#!/bin/bash
+set -e
+set -u
+
+# TODO: 
+# - add copyright stuff (Ayan Doesn't know how to do it, Michael will have address it) 
+# - make comments nice [http://mywiki.wooledge.org/BashGuide/CommandsAndArguments]
+# - check if rings start at zero or 360 deg -> adapt comments for phase shift 
+# "<post_processing> variable makes the decision of doing post processing or not.... it is required also by the GUI...cannot be ommitted"
+# - $subject: yes this is FS subject ID
+# - make it beautifullll -> What?
+# - adopt "Example" to generalize or remove it
+
+### Example Run & Usage
+# process_retmap - retinotopic mapping processing. 
+# Takes corrected niftis and generates the  phasemaps for polar angle and 
+# eccentricity, as nifti and freesurfer overlay for surface presentation.
+# 
+# Usage #
+# process_retmap <subject ID> <con> <exp> <clw> <ccw> <template_mask> <output_folder> <post_processing> <contract_shift> <expand_shift> <clock_shift> <counter_shift> <surface_maps> <anatomy_volume> <retmap2anat_mat> <ROI_mask>
+# 
+# Input definition #
+# subject        : Freesurfer subject ID
+# con            : nifti for your contracting ring
+# exp            : nifti for your expanding ring
+# clw            : nifti for your clockwise wedge
+# ccw            : nifti for your counter clockwise wedge 
+# template_mask  : mask to mask you phasemap, eg. brain mask, occ. lobe mask. 
+#                  Needs to be coregistered to your input tSeries!
+# output_folder  : where generate folders and save output
+#
+# post_processing : "True": the shift values if you didn't start as AFNI
+#                   intended and you want to shift them manually. 
+#                   Therefore give your values
+#
+# contract_shift  : range of phase shift values from 0-360
+# expand_shift    : range of phase shift values from 0-360
+# clock_shift     : range of phase shift values from 0-360
+# counter_shift   : range of phase shift values from 0-360
+#
+# surface_maps    : "True" if you want overlays.
+#
+# anatomy_volume  : your reference anatomy for the overlay. It should 
+#                   be your freesurfer anatomy, because your freesurfer 
+#                   surfaces are generated from it awhile recon-all
+# retmap2anat_mat : a '*.mat' file used for the overlays
+# ROI_mask        : if you want to get the overlay for your ROI, too
+# smooth          : for fslmaths: create a gauss kernel of sigma mm and perform mean filtering
+#
+# Example without post processing and phase shift#
+#scripts/pyretmap/code/processing_pipeline/process_retmap \
+#sub-16 \
+#/home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run001/bold_bold3Tp2_to_subjbold3Tp2.nii.gz \
+#/home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run003/bold_bold3Tp2_to_subjbold3Tp2.nii.gz \
+#/home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run004/bold_bold3Tp2_to_subjbold3Tp2.nii.gz \
+#/home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run002/bold_bold3Tp2_to_subjbold3Tp2.nii.gz \
+#/home/data/psyinf/forrest_gump/anondata/sub016/templates/bold3Tp2/brain_mask.nii.gz \
+#/home/data/exppsy/spark/Study_Forrest \
+#False \
+#'' \
+#'' \
+#'' \
+#'' \
+#False \
+#'' \
+#'' \
+#'' \
+#2
+ 
+#~/Documents/Auswertung/paper-forrest_phase2_data/code/retmap/processing_pipeline/process_retmap \
+#sub-16 \
+#/home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run001/bold_bold3Tp2_to_subjbold3Tp2.nii.gz \
+#/home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run003/bold_bold3Tp2_to_subjbold3Tp2.nii.gz \
+#/home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run004/bold_bold3Tp2_to_subjbold3Tp2.nii.gz \
+#/home/data/psyinf/forrest_gump/anondata/sub016/BOLD/task005_run002/bold_bold3Tp2_to_subjbold3Tp2.nii.gz \
+#/home/data/psyinf/forrest_gump/anondata/sub016/templates/bold3Tp2/brain_mask.nii.gz \
+#/home/fkaule/temp \
+#False \
+#'' \
+#'' \
+#'' \
+#'' \
+#False \
+#'' \
+#'' \
+#'' \
+#2
+
+
+### get necessary files and folders
+
+subject=${1}
+con=${2}
+exp=${3}
+clw=${4}
+ccw=${5}
+template_mask=${6}
+FWHM=${7}
+output_folder=${8}
+post_processing=${9}
+contract_shift=${10}
+expand_shift=${11}
+clock_shift=${12}
+counter_shift=${13}
+surface_maps=${14}  
+anatomy_volume=${15} 
+retmap2anat_mat=${16}  
+ROI_mask=${17} 
+debug_mode_flag=${18}
+
+
+stimulus_cycle_time=32 #Tstim
+highpass=`bc <<< "scale=2; 2/($stimulus_cycle_time*3)"` # should be around 1/Tstim * 2/3   
+lowpass=`bc <<< "scale=2; $highpass*3"`   # app. highpass*3
+req_TR=`fslinfo $con | grep pixdim4 | tr -s ' '| cut -d ' ' -f 2`
+code_path=$(dirname $(readlink -f "$0"))
+
+sigma="$(echo "scale=2; $FWHM / 2.35" | bc)"
+echo $sigma
+echo $code_path
+ 
+retmapping_folder=$output_folder'/'$subject
+echo 'create retmap folder'
+rm -rf $retmapping_folder
+mkdir -p $retmapping_folder
+cd $retmapping_folder
+
+echo 'create temporary processing folder'
+mkdir -p 'pre_processing'
+
+
+declare -a order_of_processing=('contract' 'expand' 'clock' 'counter');
+declare -A shift=( [con]=$contract_shift [exp]=$expand_shift [clw]=$clock_shift [ccw]=$counter_shift );
+
+retmap_volumes=`fslnvols $con`
+waver -TR $req_TR -GAM -numout ${retmap_volumes} -inline 2@0.0 1@1.0 15@0.0 1@1.0 15@0.0 1@1.0 15@0.0 1@1.0 15@0.0 1@1.0 25@0.0 > 'refts.1D'
+
+### processing
+
+index=0
+for f in $con $exp $clw $ccw; do
+
+    retmap_run_folder='pre_processing/'${order_of_processing[$index]}
+    mkdir -p $retmap_run_folder
+
+    if [ "$FWHM" -gt 0 ]; then
+        echo "Spatial Smoothing ->" 
+        fslmaths "$f" -s $sigma $retmap_run_folder'/bold_sm.nii.gz'
+    else
+        cp "$f" $retmap_run_folder'/bold_sm.nii.gz'
+    fi
+    
+    echo "Slice Time Correction ->" 
+    stcIn=$retmap_run_folder'/bold_sm.nii.gz'
+    stcOut=$retmap_run_folder'/bold_sm_STC.nii.gz'
+    3dTshift -TR $req_TR -prefix $stcOut $stcIn
+    
+    echo "De-obliquing ->" 
+    warpIn=$retmap_run_folder'/bold_sm_STC.nii.gz'
+    warpOut=$retmap_run_folder'/bold_sm_STC_deobl.nii.gz'
+    3dWarp -prefix $warpOut -deoblique $warpIn
+    
+    echo "Re-orienting to standard orientation after De-obliquing -> "
+    reorIn=$retmap_run_folder'/bold_sm_STC_deobl.nii.gz'
+    reorOut=$retmap_run_folder'/bold_sm_STC_deobl_reor.nii.gz'
+    fslreorient2std $reorIn $reorOut
+
+    echo "Band Pass Filtering -> " 
+    bpIn=$retmap_run_folder'/bold_sm_STC_deobl_reor.nii.gz'
+    bpOut=$retmap_run_folder'/bold_sm_STC_deobl_reor_filt.nii.gz'
+    3dBandpass -prefix $bpOut -norm $highpass $lowpass $bpIn
+    
+    echo "masking ->"
+    maskingIn=$retmap_run_folder'/bold_sm_STC_deobl_reor_filt.nii.gz'
+    maskingOut=$retmap_run_folder'/bold_sm_STC_deobl_reor_filt_masked.nii.gz'
+    if [ -f "$template_mask" ]; then
+		fslmaths $maskingIn -mas $template_mask $maskingOut
+    else
+		cp $maskingIn $maskingOut
+    fi
+    index="$((index + 1))"    
+done
+
+
+
+
+mkdir -p 'raw_outputs'
+# 3dRetinoPhase: 
+# the core processing. If you want to get the "rawest" version of AFNI retmap,
+# use this function and ignore the rest of this script.
+# Here you find help: [http://afni.nimh.nih.gov/pub/dist/doc/program_help/3dRetinoPhase.html]
+3dRetinoPhase -con 'pre_processing/'${order_of_processing[0]}'/bold_sm_STC_deobl_reor_filt_masked.nii.gz' \
+              -ccw 'pre_processing/'${order_of_processing[3]}'/bold_sm_STC_deobl_reor_filt_masked.nii.gz' \
+              -exp 'pre_processing/'${order_of_processing[1]}'/bold_sm_STC_deobl_reor_filt_masked.nii.gz' \
+              -clw 'pre_processing/'${order_of_processing[2]}'/bold_sm_STC_deobl_reor_filt_masked.nii.gz' \
+              -prefix 'BRIK_files/retmap' \
+              -Tstim 32 \
+              -nrings 1 \
+              -nwedges 1 \
+              -pre_stim 0 \
+              -ref_ts 'refts.1D' \
+              -phase_estimate DELAY
+
+# AFNI2nifti: 
+# since AFNI has its own file format we want to leave
+# the AFNI-universe here, transform to nifti
+mri_convert $(find 'BRIK_files' -name 'retmap.ecc.field*.BRIK' -type f) 'raw_outputs/combined_eccentricity_map_field.nii.gz' --in_type afni
+mri_convert $(find 'BRIK_files' -name 'retmap.pol.field*.BRIK' -type f) 'raw_outputs/combined_polar_map_field.nii.gz' --in_type afni
+mri_convert $(find 'BRIK_files' -name 'retmap.ecc-+*.BRIK' -type f) 'raw_outputs/con_eccentricity_map.nii.gz' --in_type afni
+mri_convert $(find 'BRIK_files' -name 'retmap.pol++*.BRIK' -type f) 'raw_outputs/clw_polar_map.nii.gz' --in_type afni
+mri_convert $(find 'BRIK_files' -name 'retmap.ecc++*.BRIK' -type f) 'raw_outputs/exp_eccentricity_map.nii.gz' --in_type afni
+mri_convert $(find 'BRIK_files' -name 'retmap.pol-+*.BRIK' -type f) 'raw_outputs/ccw_polar_map.nii.gz' --in_type afni
+
+# phaseshift and merge to efd and pfd: 
+if [ "$post_processing" == "True" ]; then
+    echo "Performing post processing"
+    mkdir -p 'post_processing'
+    
+    # phaseshift
+    # if there is a shift in stimulus onset, ie.: 
+    # - the polar wedge doesn't start at the upper vertical meridian. 
+    #   Both (ccw & clw) need to start at the upper vertical meridian
+    # - the exp & con rings don't start zero ..
+    # You can phase shift them to do so and shift the output phasemap 
+    # from 3dRetinoPhase to this position.
+    # Normally this shouldn't be necessary, unlike you do sth. special or
+    # mess with your stimulus.
+    for fileToShift in $(find 'raw_outputs' -name '*_map.nii.gz'); do
+        echo 'Post processing phase shift '$fileToShift   
+        IFS='_' read -a conds <<< $(basename $fileToShift)
+        echo ${shift[${conds[0]}]}
+        $code_path'/RetMap_phaseshift' $fileToShift ${shift[${conds[0]}]}
+    done
+
+
+
+    # merge opposite phasemaps into fieldmaps for ECC and POL:
+    # As we expect a phaseshift, we have to merge the opposite phasemaps 
+    # here. 
+    # The outcome is as the 'ecc.field*.BRIK' and 'pol.field*.BRIK' 
+    # output from 3dRetinoPhase. So if your stimulus is as AFNI intended,
+    # you can stick with the 3dRetinoPhase output.
+    $code_path'/combine_volumes' 'post_processing/con_phShift.nii.gz' 'post_processing/exp_phShift.nii.gz' 'post_processing/combined_pipeline_eccentricity.nii.gz'
+    $code_path'/combine_volumes' 'post_processing/clw_phShift.nii.gz' 'post_processing/ccw_phShift.nii.gz' 'post_processing/combined_pipeline_polar.nii.gz'
+
+    #~ #for fileToRT in $(find 'post_processing' -name '*pipeline*.nii.gz'); do
+    #~ #    echo 'Generating rtview'$fileToRT   
+    #~ #    $code_path'/deg2rtview' $fileToRT
+    #~ #done
+
+
+
+fi
+
+
+# get the phasemaps overlays for freesurfer surfaces
+if [ "$surface_maps" == "True" ]; then
+    mkdir -p 'alignments'       
+    mkdir -p 'surface_maps'
+
+    if [ "$post_processing" == "True" ]; then
+    
+        if [ "$debug_mode_flag" == "True" ]; then
+
+            files_to_process=`find 'post_processing' -name '*.nii.gz*' -type f`
+        else
+            files_to_process=`find 'post_processing' -name 'combined_*.nii.gz*' -type f`
+        fi
+    else
+        files_to_process=`find 'raw_outputs' -name 'combined_*.nii.gz*' -type f`
+    fi
+
+    for pm in $files_to_process; do
+            
+            pm_base_name=${pm##*/}
+            echo 'coregistering to anatomy -> '$pm_base_name
+            flirt \
+                -in $pm \
+                -ref "$anatomy_volume" \
+                -out 'alignments/'${pm_base_name%.*.*}'2FS_anat.nii.gz' \
+                -init $retmap2anat_mat \
+                -applyxfm
+            if [[ -f $ROI_mask ]]; then                
+                fslmaths 'alignments/'${pm_base_name%.*.*}'2FS_anat.nii.gz' -mas $ROI_mask 'alignments/'${pm_base_name%.*.*}'2FS_anat.nii.gz'
+            fi
+            ## left hemisphere
+            mri_vol2surf \
+                --hemi lh \
+                --mov 'alignments/'${pm_base_name%.*.*}'2FS_anat.nii.gz' \
+                --regheader $subject \
+                --projfrac-avg 0.0 0.75 0.001 \
+                --out 'surface_maps/'${pm_base_name%.*.*}'_lh.mgh' \
+                --surf white \
+                --out_type mgh
+
+            ## right hemisphere
+            mri_vol2surf \
+                --hemi rh \
+                --mov 'alignments/'${pm_base_name%.*.*}'2FS_anat.nii.gz' \
+                --regheader $subject \
+                --projfrac-avg 0.0 0.75 0.001 \
+                --out 'surface_maps/'${pm_base_name%.*.*}'_rh.mgh' \
+                --surf white \
+                --out_type mgh
+    done
+
+fi
+
+if [ "$debug_mode_flag" != "True" ]; then
+    echo 'delete intermediate steps'
+    rm -rf 'pre_processing'
+fi

@@ -1,0 +1,12 @@
+[submodule "src/structural"]
+	path = src/structural
+	url = https://github.com/psychoinformatics-de/studyforrest-data-structural.git
+[submodule "src/templatetransforms"]
+	path = src/templatetransforms
+	url = https://github.com/psychoinformatics-de/studyforrest-data-templatetransforms.git
+[submodule "src/aligned"]
+	path = src/aligned
+	url = https://github.com/psychoinformatics-de/studyforrest-data-aligned.git
+[submodule "src/freesurfer"]
+	path = src/freesurfer
+	url = https://github.com/psychoinformatics-de/studyforrest-data-freesurfer.git
