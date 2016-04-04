@@ -6,12 +6,15 @@ studyforrest.org Dataset
 Retinotopic Mapping
 ===================
 
-All participants in the phase2 extension of the studyforrest dataset underwent retinotopic mapping with standard flickering checkerboard stimulus (ring and wedges). More information on the procedure and the results can be found in:
+All participants in the phase2 extension of the studyforrest dataset underwent
+retinotopic mapping with standard flickering checkerboard stimulus (ring and
+wedges). More information on the procedure and the results can be found in:
 
-     Ayan Sengupta, Falko R. Kaule, J. Swaroop Guntupalli,
-     Michael B. Hoffmann, Christian Häusler, Jörg Stadler,
-     Michael Hanke. An extension of the studyforrest
-     dataset for vision research. (submitted for publication)
+     Ayan Sengupta, Falko R. Kaule, J. Swaroop Guntupalli, Michael B. Hoffmann,
+     Christian Häusler, Jörg Stadler, Michael Hanke. `An extension of the
+     studyforrest dataset for vision research
+     <http://biorxiv.org/content/early/2016/03/31/046573>`_. (submitted for
+     publication)
 
 For further information about the project visit: http://studyforrest.org
 
@@ -20,9 +23,13 @@ Content
 
 ``code/``:
 
- containing the source code used for retmapping analysis.
+ source code for retinotopic mapping analysis.
 
- - The *processing pipeline* sub-folder contains the main bash processing script *process_retmap* and a python based GUI *easyret_gui* to call it from an easy to use front end. The *process_retmap* script calls the python scripts *RetMap_phaseshift* for post processing phase shift (if required) and *combine_volumes*  for combining the clw/ccw maps and ecc/con maps together.
+ - The main script is *process_retmap* and a Python based GUI *easyret_gui* to
+   call it from an easy to use front end. The *process_retmap* script calls the
+   Python scripts *RetMap_phaseshift* for post processing phase shift (if
+   required) and *combine_volumes*  for combining the clw/ccw maps and ecc/con
+   maps together.
 
 ``src/``:
    links to repositories containing all inputs for the analysis
@@ -31,14 +38,18 @@ Content
    analysis results per participant
 
    ``surface_maps/``:
-     contains eccentricity and polar angle maps of left and right hemispheres in *mgh* format
+     contains eccentricity and polar angle maps of left and right hemispheres
+     of a particular participant's cortical surface in *MGH* format
 
    ``post_processing/``:
-     contains the post-processed compressed *nii.gz* files in the subject template space, before it is aligned to the *T1 anatomical* and represented on cortical surfaces.
-
+     contains the post-processed/combined compressed *NIfTI* files in a
+     participant's bold3Tp2 image template space
+     (see ``src/templatetransforms``), before it is aligned to the
+     *T1 structural* and represented on cortical surfaces.
 
 ``qa/``:
-   contains the *pyretmap_subjQuali.ods* file which details the quality of the subject-wise retinotopic maps produced by the *processing pipeline*.
+   contains the *pyretmap_subjQuali.ods* file which details the quality of the
+   participant-wise retinotopic maps produced by the *processing pipeline*.
 
 
 How to obtain the data files
