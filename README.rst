@@ -22,7 +22,6 @@ Content
 -------
 
 ``code/``:
-
  source code for retinotopic mapping analysis.
 
  - The main script is *process_retmap* and a Python based GUI *easyret_gui* to
