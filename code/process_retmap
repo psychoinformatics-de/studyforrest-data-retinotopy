@@ -2,15 +2,6 @@
 set -e
 set -u
 
-# TODO: 
-# - add copyright stuff (Ayan Doesn't know how to do it, Michael will have address it) 
-# - make comments nice [http://mywiki.wooledge.org/BashGuide/CommandsAndArguments]
-# - check if rings start at zero or 360 deg -> adapt comments for phase shift 
-# "<post_processing> variable makes the decision of doing post processing or not.... it is required also by the GUI...cannot be ommitted"
-# - $subject: yes this is FS subject ID
-# - make it beautifullll -> What?
-# - adopt "Example" to generalize or remove it
-
 ### Example Run & Usage
 # process_retmap - retinotopic mapping processing. 
 # Takes corrected niftis and generates the  phasemaps for polar angle and 
@@ -86,6 +77,18 @@ set -u
 #'' \
 #2
 
+### little helper
+function niigzBase
+{
+    ## get basename from a niftigz path or file
+    # usage: niigzname=$(niiBasename $inpath)
+    # example:
+    # echo  $(niigzBase 'rightGM_dil3.nii.gz')
+    # rightGM_dil3
+    #
+    echo "$(basename $1 .nii.gz)"
+}
+
 
 ### get necessary files and folders
 
@@ -94,19 +97,20 @@ con=${2}
 exp=${3}
 clw=${4}
 ccw=${5}
-template_mask=${6}
-FWHM=${7}
-output_folder=${8}
-post_processing=${9}
-contract_shift=${10}
-expand_shift=${11}
-clock_shift=${12}
-counter_shift=${13}
-surface_maps=${14}  
-anatomy_volume=${15} 
-retmap2anat_mat=${16}  
-ROI_mask=${17} 
-debug_mode_flag=${18}
+skipReoriANDDeobl=${6}
+template_mask=${7}
+FWHM=${8}
+output_folder=${9}
+post_processing=${10}
+contract_shift=${11}
+expand_shift=${12}
+clock_shift=${13}
+counter_shift=${14}
+surface_maps=${15}  
+anatomy_volume=${16} 
+retmap2anat_mat=${17}  
+ROI_mask=${18} 
+debug_mode_flag=${19}
 
 
 stimulus_cycle_time=32 #Tstim
@@ -145,54 +149,64 @@ for f in $con $exp $clw $ccw; do
 
     if [ "$FWHM" -gt 0 ]; then
         echo "Spatial Smoothing ->" 
-        fslmaths "$f" -s $sigma $retmap_run_folder'/bold_sm.nii.gz'
+        sm_in="${f}"
+        sm_out=$retmap_run_folder'/bold_sm.nii.gz'
+        fslmaths "$f" -s $sigma $sm_out
     else
-        cp "$f" $retmap_run_folder'/bold_sm.nii.gz'
+        echo "skip Spatial Smoothing ->"
+        sm_out=$retmap_run_folder'/bold.nii.gz'
+        cp "$f" $sm_out
     fi
     
     echo "Slice Time Correction ->" 
-    stcIn=$retmap_run_folder'/bold_sm.nii.gz'
-    stcOut=$retmap_run_folder'/bold_sm_STC.nii.gz'
+    stcIn=$sm_out
+    stcOut=$retmap_run_folder/$(niigzBase $stcIn)'_STC.nii.gz'
     3dTshift -TR $req_TR -prefix $stcOut $stcIn
     
-    echo "De-obliquing ->" 
-    warpIn=$retmap_run_folder'/bold_sm_STC.nii.gz'
-    warpOut=$retmap_run_folder'/bold_sm_STC_deobl.nii.gz'
-    3dWarp -prefix $warpOut -deoblique $warpIn
+    if [ "$skipReoriANDDeobl" == "True" ]; then
+        echo "skip Re-orient to standard and De-obliquing ->"
+        reorOut=$stcOut
+    else
+        echo "De-obliquing ->" 
+        warpIn=$stcOut
+        warpOut=$retmap_run_folder/$(niigzBase $stcOut)'_deobl.nii.gz'
+        3dWarp -prefix $warpOut -deoblique $warpIn
+        
+        echo "Re-orienting to standard orientation after De-obliquing ->"
+        reorIn=$warpOut
+        reorOut=$retmap_run_folder/$(niigzBase $warpOut)'_reor.nii.gz'
+        fslreorient2std $reorIn $reorOut
+    fi
     
-    echo "Re-orienting to standard orientation after De-obliquing -> "
-    reorIn=$retmap_run_folder'/bold_sm_STC_deobl.nii.gz'
-    reorOut=$retmap_run_folder'/bold_sm_STC_deobl_reor.nii.gz'
-    fslreorient2std $reorIn $reorOut
-
-    echo "Band Pass Filtering -> " 
-    bpIn=$retmap_run_folder'/bold_sm_STC_deobl_reor.nii.gz'
-    bpOut=$retmap_run_folder'/bold_sm_STC_deobl_reor_filt.nii.gz'
+    echo "Band Pass Filtering ->" 
+    bpIn=$reorOut
+    bpOut=$retmap_run_folder/$(niigzBase $reorOut)'_filt.nii.gz'
     3dBandpass -prefix $bpOut -norm $highpass $lowpass $bpIn
     
-    echo "masking ->"
-    maskingIn=$retmap_run_folder'/bold_sm_STC_deobl_reor_filt.nii.gz'
-    maskingOut=$retmap_run_folder'/bold_sm_STC_deobl_reor_filt_masked.nii.gz'
     if [ -f "$template_mask" ]; then
-		fslmaths $maskingIn -mas $template_mask $maskingOut
+        echo "masking ->"  
+        maskingIn=$bpOut
+        maskingOut=$retmap_run_folder/$(niigzBase $bpOut)'_masked.nii.gz'
+        fslmaths $maskingIn -mas $template_mask $maskingOut
     else
-		cp $maskingIn $maskingOut
+        echo "skip masking ->"
+        maskingOut=$bpOut
     fi
+    
+    # hand over output of last preProc step (here masking)
+    preProcOut=$(basename $maskingOut)
     index="$((index + 1))"    
 done
-
-
-
 
 mkdir -p 'raw_outputs'
 # 3dRetinoPhase: 
 # the core processing. If you want to get the "rawest" version of AFNI retmap,
 # use this function and ignore the rest of this script.
 # Here you find help: [http://afni.nimh.nih.gov/pub/dist/doc/program_help/3dRetinoPhase.html]
-3dRetinoPhase -con 'pre_processing/'${order_of_processing[0]}'/bold_sm_STC_deobl_reor_filt_masked.nii.gz' \
-              -ccw 'pre_processing/'${order_of_processing[3]}'/bold_sm_STC_deobl_reor_filt_masked.nii.gz' \
-              -exp 'pre_processing/'${order_of_processing[1]}'/bold_sm_STC_deobl_reor_filt_masked.nii.gz' \
-              -clw 'pre_processing/'${order_of_processing[2]}'/bold_sm_STC_deobl_reor_filt_masked.nii.gz' \
+3dRetinoPhase -con 'pre_processing/'${order_of_processing[0]}/$preProcOut \
+              -ccw 'pre_processing/'${order_of_processing[3]}/$preProcOut \
+              -exp 'pre_processing/'${order_of_processing[1]}/$preProcOut \
+              -clw 'pre_processing/'${order_of_processing[2]}/$preProcOut \
               -prefix 'BRIK_files/retmap' \
               -Tstim 32 \
               -nrings 1 \
@@ -232,8 +246,6 @@ if [ "$post_processing" == "True" ]; then
         $code_path'/RetMap_phaseshift' $fileToShift ${shift[${conds[0]}]}
     done
 
-
-
     # merge opposite phasemaps into fieldmaps for ECC and POL:
     # As we expect a phaseshift, we have to merge the opposite phasemaps 
     # here. 
@@ -247,8 +259,6 @@ if [ "$post_processing" == "True" ]; then
     #~ #    echo 'Generating rtview'$fileToRT   
     #~ #    $code_path'/deg2rtview' $fileToRT
     #~ #done
-
-
 
 fi
 
